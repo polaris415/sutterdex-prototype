@@ -1,5 +1,5 @@
 /**
- * Maps Careport export rows to SutterDex vendor records.
+ * Maps Careport export rows to ContactDex vendor records.
  * Fields are mapped per PRD Section 4.3.
  */
 

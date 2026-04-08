@@ -16,16 +16,23 @@ function Badge({ children, color = 'gray' }) {
   return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${colors[color]}`}>{children}</span>;
 }
 
-function MultiCheckDropdown({ label, options, selected, onChange }) {
+function MultiCheckDropdown({ options, selected, onChange }) {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const ref = useRef(null);
+
   useEffect(() => {
     if (!open) return;
     const handler = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
+
+  useEffect(() => { if (!open) setSearch(''); }, [open]);
+
+  const filtered = options.filter(opt => opt.toLowerCase().includes(search.toLowerCase()));
   const count = selected.length;
+
   return (
     <div className="relative" ref={ref}>
       <button
@@ -39,25 +46,50 @@ function MultiCheckDropdown({ label, options, selected, onChange }) {
         <ChevronDown size={12} className="flex-shrink-0 ml-1" />
       </button>
       {open && (
-        <div className="absolute z-50 top-full mt-1 left-0 w-56 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-          {count > 0 && (
-            <button
-              onClick={() => onChange([])}
-              className="w-full text-left px-3 py-2 text-xs text-gray-400 hover:text-gray-600 border-b border-gray-100"
-            >
-              Clear selection
-            </button>
-          )}
-          {options.map(opt => (
-            <label key={opt} className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm text-gray-700">
-              <div className={`w-3.5 h-3.5 flex-shrink-0 rounded border flex items-center justify-center ${
-                selected.includes(opt) ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
-              }`}>
-                {selected.includes(opt) && <Check size={9} className="text-white" />}
-              </div>
-              {opt}
-            </label>
-          ))}
+        <div className="absolute z-50 top-full mt-1 left-0 w-64 bg-white border border-gray-200 rounded-lg shadow-lg">
+          <div className="p-2 border-b border-gray-100">
+            <input
+              autoFocus
+              className="w-full px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+              placeholder="Search..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              onClick={e => e.stopPropagation()}
+            />
+          </div>
+          <div className="max-h-52 overflow-y-auto">
+            {count > 0 && (
+              <button
+                onClick={() => onChange([])}
+                className="w-full text-left px-3 py-2 text-xs text-gray-400 hover:text-gray-600 border-b border-gray-100"
+              >
+                Clear selection
+              </button>
+            )}
+            {filtered.length === 0 ? (
+              <p className="px-3 py-2 text-sm text-gray-400">No matches</p>
+            ) : (
+              filtered.map(opt => {
+                const isSelected = selected.includes(opt);
+                return (
+                  <label key={opt} className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      className="hidden"
+                      checked={isSelected}
+                      onChange={() => onChange(isSelected ? selected.filter(s => s !== opt) : [...selected, opt])}
+                    />
+                    <div className={`w-3.5 h-3.5 flex-shrink-0 rounded border flex items-center justify-center ${
+                      isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
+                    }`}>
+                      {isSelected && <Check size={9} className="text-white" />}
+                    </div>
+                    {opt}
+                  </label>
+                );
+              })
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -134,13 +166,13 @@ function VendorRow({ vendor, onClick, onSubmitEdit }) {
 }
 
 const EMPTY_FILTERS = {
-  vendorType: '',
-  facilityCounty: '',
-  coverageCounty: '',
+  vendorType: [],
+  facilityCounty: [],
+  coverageCounty: [],
   clinicalTags: [],
   vendorTags: [],
-  corporateGroup: '',
-  hospital: '',
+  corporateGroup: [],
+  hospital: [],
 };
 
 export default function SearchInterface({ vendors, onSubmitVendor, auditLog = [], isAdmin = false }) {
@@ -153,10 +185,10 @@ export default function SearchInterface({ vendors, onSubmitVendor, auditLog = []
 
   const setFilter = (k, v) => setFilters(f => ({ ...f, [k]: v }));
 
-  const activeCount = [
-    filters.vendorType, filters.facilityCounty, filters.coverageCounty,
-    filters.corporateGroup, filters.hospital,
-  ].filter(Boolean).length + filters.clinicalTags.length + filters.vendorTags.length;
+  const activeCount =
+    filters.vendorType.length + filters.facilityCounty.length + filters.coverageCounty.length +
+    filters.corporateGroup.length + filters.hospital.length +
+    filters.clinicalTags.length + filters.vendorTags.length;
 
   const hiddenCount = useMemo(() => vendors.filter(v => v.hidden).length, [vendors]);
 
@@ -219,7 +251,7 @@ export default function SearchInterface({ vendors, onSubmitVendor, auditLog = []
       ws['!cols'] = colWidths;
 
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'SutterDex Export');
+      XLSX.utils.book_append_sheet(wb, ws, 'ContactDex Export');
 
       // Build filename with date and active filters
       const date = new Date().toISOString().slice(0, 10);
@@ -229,7 +261,7 @@ export default function SearchInterface({ vendors, onSubmitVendor, auditLog = []
         query ? `"${query}"` : '',
       ].filter(Boolean);
       const suffix = filterParts.length > 0 ? ` - ${filterParts.join(', ')}` : '';
-      const filename = `SutterDex${suffix} ${date}.xlsx`;
+      const filename = `ContactDex${suffix} ${date}.xlsx`;
 
       XLSX.writeFile(wb, filename);
     } finally {
@@ -258,13 +290,13 @@ export default function SearchInterface({ vendors, onSubmitVendor, auditLog = []
         );
       });
     }
-    if (filters.vendorType) list = list.filter(v => v.vendorType === filters.vendorType);
-    if (filters.facilityCounty) list = list.filter(v => v.county === filters.facilityCounty);
-    if (filters.coverageCounty) list = list.filter(v => v.coverageAreas?.includes(filters.coverageCounty));
+    if (filters.vendorType.length > 0) list = list.filter(v => filters.vendorType.includes(v.vendorType));
+    if (filters.facilityCounty.length > 0) list = list.filter(v => filters.facilityCounty.includes(v.county));
+    if (filters.coverageCounty.length > 0) list = list.filter(v => filters.coverageCounty.some(c => v.coverageAreas?.includes(c)));
     if (filters.clinicalTags.length > 0) list = list.filter(v => filters.clinicalTags.every(t => v.clinicalTags?.includes(t)));
     if (filters.vendorTags.length > 0) list = list.filter(v => filters.vendorTags.every(t => v.vendorTags?.includes(t)));
-    if (filters.corporateGroup) list = list.filter(v => v.corporateGroup === filters.corporateGroup);
-    if (filters.hospital) list = list.filter(v => v.reviewingSite === filters.hospital);
+    if (filters.corporateGroup.length > 0) list = list.filter(v => filters.corporateGroup.includes(v.corporateGroup));
+    if (filters.hospital.length > 0) list = list.filter(v => filters.hospital.includes(v.reviewingSite));
 
     return [...list].sort((a, b) => {
       if (sortBy === 'name') return a.name.localeCompare(b.name);
@@ -306,48 +338,39 @@ export default function SearchInterface({ vendors, onSubmitVendor, auditLog = []
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Vendor Type</label>
-            <select
-              className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={filters.vendorType} onChange={e => setFilter('vendorType', e.target.value)}
-            >
-              <option value="">All Types</option>
-              {VENDOR_TYPES.map(t => <option key={t}>{t}</option>)}
-            </select>
+            <MultiCheckDropdown
+              options={VENDOR_TYPES}
+              selected={filters.vendorType}
+              onChange={v => setFilter('vendorType', v)}
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Facility County</label>
-            <select
-              className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={filters.facilityCounty} onChange={e => setFilter('facilityCounty', e.target.value)}
-            >
-              <option value="">All Counties</option>
-              {COUNTIES.map(c => <option key={c}>{c}</option>)}
-            </select>
+            <MultiCheckDropdown
+              options={COUNTIES}
+              selected={filters.facilityCounty}
+              onChange={v => setFilter('facilityCounty', v)}
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Service Area</label>
-            <select
-              className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={filters.coverageCounty} onChange={e => setFilter('coverageCounty', e.target.value)}
-            >
-              <option value="">All Counties</option>
-              {COUNTIES.map(c => <option key={c}>{c}</option>)}
-            </select>
+            <MultiCheckDropdown
+              options={COUNTIES}
+              selected={filters.coverageCounty}
+              onChange={v => setFilter('coverageCounty', v)}
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Corporate Group</label>
-            <select
-              className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={filters.corporateGroup} onChange={e => setFilter('corporateGroup', e.target.value)}
-            >
-              <option value="">All Groups</option>
-              {CORPORATE_GROUPS.map(g => <option key={g}>{g}</option>)}
-            </select>
+            <MultiCheckDropdown
+              options={CORPORATE_GROUPS}
+              selected={filters.corporateGroup}
+              onChange={v => setFilter('corporateGroup', v)}
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Clinical Tags</label>
             <MultiCheckDropdown
-              label="Clinical Tags"
               options={CLINICAL_TAGS}
               selected={filters.clinicalTags}
               onChange={v => setFilter('clinicalTags', v)}
@@ -356,7 +379,6 @@ export default function SearchInterface({ vendors, onSubmitVendor, auditLog = []
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Vendor Tags</label>
             <MultiCheckDropdown
-              label="Vendor Tags"
               options={VENDOR_TAGS}
               selected={filters.vendorTags}
               onChange={v => setFilter('vendorTags', v)}
@@ -364,13 +386,11 @@ export default function SearchInterface({ vendors, onSubmitVendor, auditLog = []
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Reviewing Hospital</label>
-            <select
-              className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={filters.hospital} onChange={e => setFilter('hospital', e.target.value)}
-            >
-              <option value="">All Hospitals</option>
-              {HOSPITALS.map(h => <option key={h}>{h}</option>)}
-            </select>
+            <MultiCheckDropdown
+              options={HOSPITALS}
+              selected={filters.hospital}
+              onChange={v => setFilter('hospital', v)}
+            />
           </div>
           {activeCount > 0 && (
             <div className="flex items-end">

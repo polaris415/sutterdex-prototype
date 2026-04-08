@@ -346,7 +346,7 @@ export default function ProposeEditModal({ vendor, onClose, onSubmit }) {
           </Field>
 
           <div className="bg-blue-50 text-blue-800 text-xs rounded-lg p-3">
-            Your proposed changes will be sent to a SutterDex administrator for review. The directory will not be updated until an admin approves.
+            Your proposed changes will be sent to a ContactDex administrator for review. The directory will not be updated until an admin approves.
           </div>
 
           <div className="flex justify-end gap-3 pt-1">

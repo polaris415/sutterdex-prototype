@@ -41,9 +41,9 @@ function buildNotification(submission, action, adminNote) {
       type: 'approved',
       title: `Submission approved — ${vendor}`,
       to: submitter,
-      subject: `SutterDex: Your submission for "${vendor}" has been approved`,
+      subject: `ContactDex: Your submission for "${vendor}" has been approved`,
       body: isNew
-        ? `Your submission for a new vendor "${vendor}" has been approved and added to the SutterDex directory. It is now searchable by all staff.`
+        ? `Your submission for a new vendor "${vendor}" has been approved and added to the ContactDex directory. It is now searchable by all staff.`
         : isEdit
         ? `Your proposed edits for "${vendor}" have been approved and applied to the directory.`
         : `Your ${submission.field} update for "${vendor}" has been approved and applied to the directory.`,
@@ -54,7 +54,7 @@ function buildNotification(submission, action, adminNote) {
       type: 'rejected',
       title: `Submission rejected — ${vendor}`,
       to: submitter,
-      subject: `SutterDex: Your submission for "${vendor}" was not approved`,
+      subject: `ContactDex: Your submission for "${vendor}" was not approved`,
       body: isNew
         ? `Your submission for a new vendor "${vendor}" was reviewed but not approved at this time.`
         : isEdit
@@ -1181,7 +1181,7 @@ export default function AdminInterface({
               <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-gray-600">
                 <p className="font-medium text-gray-800 mb-2">Role Definitions</p>
                 <div className="space-y-2">
-                  <p><span className="font-medium">Search User</span> — Default for all authenticated Sutter Health staff. Read-only access to Interface 1. Can submit new vendor contacts.</p>
+                  <p><span className="font-medium">Search User</span> — Default for all authenticated staff. Read-only access to Interface 1. Can submit new vendor contacts.</p>
                   <p><span className="font-medium">Site POC</span> — Responsible for reviewing vendor records associated with their hospital site during review cycles.</p>
                   <p><span className="font-medium">Admin</span> — Full access to Interface 2. Can import Careport data, manage review cycles, approve/reject submissions, and manage user roles.</p>
                 </div>
