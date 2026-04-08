@@ -3,7 +3,7 @@ import { useRef } from 'react';
 import {
   Upload, CheckCircle, XCircle, Clock, Users, BarChart2, RefreshCw,
   ChevronRight, AlertCircle, FileUp, Edit2, Trash2, Plus, Tag,
-  Search, Calendar, Loader, History, ChevronDown, Eye, EyeOff
+  Search, Calendar, Loader, History, ChevronDown, Eye, EyeOff, Mail
 } from 'lucide-react';
 import { VENDOR_TYPES, CLINICAL_TAGS, VENDOR_TAGS, COUNTIES, HOSPITALS, CORPORATE_GROUPS, SERVICE_AREAS, CONTACT_TYPES, CORPORATE_GROUPS_BY_TYPE } from '../data/sampleData';
 import { formatPhone } from '../utils/formatPhone';
@@ -243,7 +243,7 @@ function PendingSubmissionCard({ submission, onApprove, onReject }) {
 }
 
 function ReviewCycleCard({ cycle }) {
-  const pct = Math.round((cycle.reviewed / cycle.totalVendors) * 100);
+  const pct = Math.round((cycle.reviewed / cycle.totalVendors) * 100) || 0;
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4">
       <div className="flex items-start justify-between mb-3">
@@ -251,7 +251,11 @@ function ReviewCycleCard({ cycle }) {
           <p className="font-medium text-gray-900">{cycle.name}</p>
           <p className="text-xs text-gray-500 mt-0.5">
             Started {cycle.startedAt}{cycle.closedAt ? ` · Closed ${cycle.closedAt}` : ''}
+            {cycle.dueDate ? ` · Due ${cycle.dueDate}` : ''}
           </p>
+          {cycle.pocName && (
+            <p className="text-xs text-blue-600 mt-0.5">POC: {cycle.pocName}</p>
+          )}
         </div>
         <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${
           cycle.status === 'Active' ? 'text-green-700 bg-green-50 border-green-200' : 'text-gray-600 bg-gray-100 border-gray-200'
@@ -277,80 +281,743 @@ function ReviewCycleCard({ cycle }) {
   );
 }
 
-function VendorTable({ vendors, onEdit, onDelete }) {
-  const [search, setSearch] = useState('');
-  const filtered = vendors.filter(v =>
-    v.name.toLowerCase().includes(search.toLowerCase()) ||
-    v.vendorType.toLowerCase().includes(search.toLowerCase())
-  );
+// ── Bulk Edit Modal ───────────────────────────────────────────────────────────
+
+function BulkEditModal({ selectedIds, onClose, onSave }) {
+  const count = selectedIds.size;
+  const [vendorType, setVendorType] = useState('');
+  const [reviewingSite, setReviewingSite] = useState('');
+  const [corporateGroup, setCorporateGroup] = useState('');
+  const [coverageAreas, setCoverageAreas] = useState(null);
+  const [clinicalTagsAdd, setClinicalTagsAdd] = useState([]);
+  const [vendorTagsAdd, setVendorTagsAdd] = useState([]);
+  const [addContact, setAddContact] = useState(false);
+  const [newContact, setNewContact] = useState({ type: '', name: '', title: '', phone: '', email: '' });
+
+  const toggleCoverage = (a) => {
+    setCoverageAreas(prev => {
+      const arr = prev || [];
+      return arr.includes(a) ? arr.filter(x => x !== a) : [...arr, a];
+    });
+  };
+
+  const handleSave = () => {
+    const updates = {};
+    if (vendorType) updates.vendorType = vendorType;
+    if (reviewingSite) updates.reviewingSite = reviewingSite;
+    if (corporateGroup) updates.corporateGroup = corporateGroup;
+    if (coverageAreas !== null) updates.coverageAreas = coverageAreas;
+    if (clinicalTagsAdd.length > 0) updates._addClinicalTags = clinicalTagsAdd;
+    if (vendorTagsAdd.length > 0) updates._addVendorTags = vendorTagsAdd;
+    if (addContact && newContact.name) updates._addContact = newContact;
+    onSave(updates);
+  };
+
+  const hasChanges = vendorType || reviewingSite || corporateGroup || coverageAreas !== null ||
+    clinicalTagsAdd.length > 0 || vendorTagsAdd.length > 0 || (addContact && newContact.name);
+
   return (
-    <div>
-      <div className="flex items-center gap-3 mb-4">
-        <div className="relative flex-1 max-w-xs">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="Search vendors…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[85vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 z-10 flex items-start justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Bulk Edit — {count} vendor{count !== 1 ? 's' : ''}</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Only filled fields will be updated. Blank fields are left unchanged.</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl font-bold leading-none mt-0.5">×</button>
         </div>
-        <button
-          onClick={onEdit}
-          className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
-        >
-          <Plus size={14} />Add Vendor
-        </button>
+        <div className="px-6 py-5 space-y-5">
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Set Vendor Type</label>
+            <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={vendorType} onChange={e => setVendorType(e.target.value)}>
+              <option value="">(no change)</option>
+              {VENDOR_TYPES.map(t => <option key={t}>{t}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Set Reviewing Hospital</label>
+            <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={reviewingSite} onChange={e => setReviewingSite(e.target.value)}>
+              <option value="">(no change)</option>
+              {HOSPITALS.map(h => <option key={h}>{h}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Set Corporate Group</label>
+            <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={corporateGroup} onChange={e => setCorporateGroup(e.target.value)}>
+              <option value="">(no change)</option>
+              {CORPORATE_GROUPS.map(g => <option key={g}>{g}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Set Service Area
+              {coverageAreas !== null && (
+                <button type="button" onClick={() => setCoverageAreas(null)}
+                  className="ml-2 text-gray-400 hover:text-gray-600 font-normal">(clear — no change)</button>
+              )}
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {SERVICE_AREAS.map(a => (
+                <button key={a} type="button" onClick={() => toggleCoverage(a)}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                    coverageAreas?.includes(a)
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'border-gray-300 text-gray-600 hover:border-blue-400'
+                  }`}>
+                  {a}
+                </button>
+              ))}
+            </div>
+            {coverageAreas === null && <p className="text-xs text-gray-400 mt-1">Click to activate — replaces existing service areas on all selected vendors.</p>}
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-2">Add Clinical Tags <span className="font-normal text-gray-400">(merges with existing)</span></label>
+            <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto border border-gray-200 rounded-lg p-2">
+              {CLINICAL_TAGS.map(tag => (
+                <label key={tag} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-50 px-1 py-0.5 rounded">
+                  <input type="checkbox" checked={clinicalTagsAdd.includes(tag)}
+                    onChange={e => setClinicalTagsAdd(prev => e.target.checked ? [...prev, tag] : prev.filter(t => t !== tag))}
+                    className="w-3.5 h-3.5 accent-blue-600" />
+                  {tag}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-2">Add Vendor Tags <span className="font-normal text-gray-400">(merges with existing)</span></label>
+            <div className="grid grid-cols-2 gap-1.5 border border-gray-200 rounded-lg p-2">
+              {VENDOR_TAGS.map(tag => (
+                <label key={tag} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-50 px-1 py-0.5 rounded">
+                  <input type="checkbox" checked={vendorTagsAdd.includes(tag)}
+                    onChange={e => setVendorTagsAdd(prev => e.target.checked ? [...prev, tag] : prev.filter(t => t !== tag))}
+                    className="w-3.5 h-3.5 accent-amber-500" />
+                  {tag}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="border border-gray-200 rounded-xl p-4">
+            <label className="flex items-center gap-2 cursor-pointer mb-3">
+              <input type="checkbox" checked={addContact} onChange={e => setAddContact(e.target.checked)}
+                className="w-4 h-4 accent-blue-600" />
+              <span className="text-xs font-medium text-gray-700">Add a contact to all selected vendors</span>
+            </label>
+            {addContact && (
+              <div className="space-y-2">
+                <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={newContact.type} onChange={e => setNewContact(c => ({ ...c, type: e.target.value }))}>
+                  <option value="">Contact Type…</option>
+                  {CONTACT_TYPES.map(t => <option key={t}>{t}</option>)}
+                </select>
+                <div className="grid grid-cols-2 gap-2">
+                  <input placeholder="Name *" className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={newContact.name} onChange={e => setNewContact(c => ({ ...c, name: e.target.value }))} />
+                  <input placeholder="Title" className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={newContact.title} onChange={e => setNewContact(c => ({ ...c, title: e.target.value }))} />
+                  <input placeholder="Phone" className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={newContact.phone} onChange={e => setNewContact(c => ({ ...c, phone: e.target.value }))} />
+                  <input placeholder="Email" className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={newContact.email} onChange={e => setNewContact(c => ({ ...c, email: e.target.value }))} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Cancel</button>
+            <button type="button" onClick={handleSave} disabled={!hasChanges}
+              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed">
+              Apply to {count} Vendor{count !== 1 ? 's' : ''}
+            </button>
+          </div>
+        </div>
       </div>
+    </div>
+  );
+}
+
+// ── Add Site POC Modal ────────────────────────────────────────────────────────
+
+function AddSitePocModal({ onClose, onSave }) {
+  const [form, setForm] = useState({ name: '', role: 'Site POC', site: '', email: '' });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Add Site POC</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl font-bold leading-none">×</button>
+        </div>
+        <form className="px-6 py-5 space-y-4" onSubmit={e => { e.preventDefault(); onSave(form); onClose(); }}>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Full Name *</label>
+            <input required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={form.name} onChange={e => set('name', e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Role *</label>
+            <select required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={form.role} onChange={e => set('role', e.target.value)}>
+              <option value="Site POC">Site POC</option>
+              <option value="Admin">Admin</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Site / Hospital *</label>
+            <select required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={form.site} onChange={e => set('site', e.target.value)}>
+              <option value="">Select site…</option>
+              {HOSPITALS.map(h => <option key={h}>{h}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Email *</label>
+            <input required type="email" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={form.email} onChange={e => set('email', e.target.value)} />
+          </div>
+          <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Cancel</button>
+            <button type="submit" className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700">
+              Add Site POC
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Initiate Review Cycle Modal ───────────────────────────────────────────────
+
+function InitiateReviewCycleModal({ selectedCount, sitePocs, onClose, onSubmit }) {
+  const [pocId, setPocId] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [cycleName, setCycleName] = useState(
+    `Review Cycle — ${new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`
+  );
+  const [comments, setComments] = useState('');
+
+  const selectedPoc = sitePocs.find(p => p.id === pocId);
+  const canSubmit = pocId && dueDate && sitePocs.length > 0;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-start justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Initiate Review Cycle</h2>
+            <p className="text-xs text-gray-500 mt-0.5">{selectedCount} vendor{selectedCount !== 1 ? 's' : ''} selected for review</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl font-bold leading-none mt-0.5">×</button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Cycle Name</label>
+            <input className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={cycleName} onChange={e => setCycleName(e.target.value)} />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Assign Site POC *</label>
+            {sitePocs.length === 0 ? (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700">
+                No Site POCs have been added yet. Go to <strong>Users &amp; Roles</strong> to add a Site POC first.
+              </div>
+            ) : (
+              <select required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={pocId} onChange={e => setPocId(e.target.value)}>
+                <option value="">Select Site POC…</option>
+                {sitePocs.map(p => (
+                  <option key={p.id} value={p.id}>{p.name} — {p.site}</option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Due Date *</label>
+            <input type="date" required
+              min={new Date().toISOString().split('T')[0]}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={dueDate} onChange={e => setDueDate(e.target.value)} />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Comments / Instructions</label>
+            <textarea rows={3} placeholder="Add any instructions or context for the Site POC…"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              value={comments} onChange={e => setComments(e.target.value)} />
+          </div>
+
+          {selectedPoc && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+              <p className="font-medium mb-0.5">Email notification will be sent to:</p>
+              <p>{selectedPoc.name} &lt;{selectedPoc.email}&gt; · {selectedPoc.site}</p>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Cancel</button>
+            <button
+              type="button"
+              disabled={!canSubmit}
+              onClick={() => {
+                const poc = sitePocs.find(p => p.id === pocId);
+                onSubmit({ name: cycleName, sitePocId: pocId, pocName: poc?.name, pocEmail: poc?.email, dueDate, comments });
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Mail size={14} />Send Email Notification to Site POC
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Review Cycle Vendor Selector ──────────────────────────────────────────────
+
+function ReviewCycleVendorSelector({ vendors, sitePocs, onInitiate }) {
+  const [hospitalFilter, setHospitalFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState(new Set());
+  const [showInitiateModal, setShowInitiateModal] = useState(false);
+
+  const filtered = vendors.filter(v => {
+    if (hospitalFilter && v.reviewingSite !== hospitalFilter) return false;
+    if (typeFilter && v.vendorType !== typeFilter) return false;
+    if (search && !v.name.toLowerCase().includes(search.toLowerCase()) &&
+        !v.vendorType?.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  const displayedVendors = filtered.slice(0, 150);
+  const allDisplayedSelected = displayedVendors.length > 0 && displayedVendors.every(v => selected.has(v.id));
+
+  const toggleAll = () => {
+    if (allDisplayedSelected) {
+      setSelected(s => { const n = new Set(s); displayedVendors.forEach(v => n.delete(v.id)); return n; });
+    } else {
+      setSelected(s => { const n = new Set(s); displayedVendors.forEach(v => n.add(v.id)); return n; });
+    }
+  };
+
+  const toggleVendor = (id) => {
+    setSelected(s => { const n = new Set(s); s.has(id) ? n.delete(id) : n.add(id); return n; });
+  };
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-gray-900">Select Vendors for Review</h3>
+        {selected.size > 0 && (
+          <button onClick={() => setShowInitiateModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700">
+            <RefreshCw size={14} />Initiate Review Cycle for {selected.size} Vendor{selected.size !== 1 ? 's' : ''}
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <select value={hospitalFilter} onChange={e => setHospitalFilter(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="">All Hospitals (primary filter)</option>
+          {HOSPITALS.map(h => <option key={h}>{h}</option>)}
+        </select>
+        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="">All Vendor Types</option>
+          {VENDOR_TYPES.map(t => <option key={t}>{t}</option>)}
+        </select>
+        <div className="relative">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Search vendor name…" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between text-xs text-gray-500">
+        <span>{filtered.length} vendor{filtered.length !== 1 ? 's' : ''} match filters{filtered.length > 150 ? ' (showing first 150)' : ''}</span>
+        {selected.size > 0 && (
+          <span className="text-blue-600 font-medium">{selected.size} selected</span>
+        )}
+      </div>
+
+      <div className="border border-gray-200 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-gray-50 border-b border-gray-200">
+              <th className="px-4 py-3 w-10">
+                <input type="checkbox" checked={allDisplayedSelected && displayedVendors.length > 0}
+                  onChange={toggleAll} className="w-4 h-4 accent-blue-600" />
+              </th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Vendor</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Type</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Reviewing Hospital</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {displayedVendors.length === 0 ? (
+              <tr><td colSpan={4} className="px-4 py-8 text-center text-sm text-gray-400">No vendors match the current filters.</td></tr>
+            ) : (
+              displayedVendors.map(v => (
+                <tr key={v.id} className={`cursor-pointer ${selected.has(v.id) ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                  onClick={() => toggleVendor(v.id)}>
+                  <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={selected.has(v.id)}
+                      onChange={() => toggleVendor(v.id)}
+                      className="w-4 h-4 accent-blue-600" />
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <p className="font-medium text-gray-900">{v.name}</p>
+                    {v.city && <p className="text-xs text-gray-400">{v.city}{v.county ? `, ${v.county}` : ''}</p>}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-gray-600 max-w-40 leading-relaxed">{v.vendorType}</td>
+                  <td className="px-4 py-2.5 text-xs">
+                    {v.reviewingSite
+                      ? <span className="text-blue-700 bg-blue-50 px-2 py-0.5 rounded">{v.reviewingSite}</span>
+                      : <span className="text-gray-400">—</span>}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {selected.size > 0 && (
+        <div className="flex justify-end">
+          <button onClick={() => setShowInitiateModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700">
+            <RefreshCw size={14} />Initiate Review Cycle for {selected.size} Vendor{selected.size !== 1 ? 's' : ''}
+          </button>
+        </div>
+      )}
+
+      {showInitiateModal && (
+        <InitiateReviewCycleModal
+          selectedCount={selected.size}
+          sitePocs={sitePocs}
+          onClose={() => setShowInitiateModal(false)}
+          onSubmit={(data) => {
+            onInitiate({ ...data, vendorIds: [...selected] });
+            setSelected(new Set());
+            setShowInitiateModal(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Vendor Table (with filters + bulk select/edit) ────────────────────────────
+
+function VendorTable({ vendors, onEdit, onDelete, onBulkUpdate }) {
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [countyFilter, setCountyFilter] = useState('');
+  const [hospitalFilter, setHospitalFilter] = useState('');
+  const [corporateGroupFilter, setCorporateGroupFilter] = useState('');
+  const [clinicalTagFilter, setClinicalTagFilter] = useState('');
+  const [vendorTagFilter, setVendorTagFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [selected, setSelected] = useState(new Set());
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 25;
+
+  const filtered = vendors.filter(v => {
+    if (search) {
+      const q = search.toLowerCase();
+      const match = v.name?.toLowerCase().includes(q) ||
+        v.vendorType?.toLowerCase().includes(q) ||
+        v.city?.toLowerCase().includes(q) ||
+        v.county?.toLowerCase().includes(q) ||
+        v.abbreviation?.toLowerCase().includes(q) ||
+        v.synonyms?.some(s => s.toLowerCase().includes(q));
+      if (!match) return false;
+    }
+    if (typeFilter && v.vendorType !== typeFilter) return false;
+    if (countyFilter && v.county !== countyFilter) return false;
+    if (hospitalFilter && v.reviewingSite !== hospitalFilter) return false;
+    if (corporateGroupFilter && v.corporateGroup !== corporateGroupFilter) return false;
+    if (clinicalTagFilter && !v.clinicalTags?.includes(clinicalTagFilter)) return false;
+    if (vendorTagFilter && !v.vendorTags?.includes(vendorTagFilter)) return false;
+    if (statusFilter === 'active' && (v.hidden || v.pendingReview)) return false;
+    if (statusFilter === 'hidden' && !v.hidden) return false;
+    if (statusFilter === 'needs_review' && !v.pendingReview) return false;
+    return true;
+  });
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
+  const currentPage = Math.min(page, totalPages);
+  const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  const allPageSelected = paginated.length > 0 && paginated.every(v => selected.has(v.id));
+
+  const toggleSelectAll = () => {
+    if (allPageSelected) {
+      setSelected(s => { const n = new Set(s); paginated.forEach(v => n.delete(v.id)); return n; });
+    } else {
+      setSelected(s => { const n = new Set(s); paginated.forEach(v => n.add(v.id)); return n; });
+    }
+  };
+
+  const hasFilters = search || typeFilter || countyFilter || hospitalFilter || corporateGroupFilter ||
+    clinicalTagFilter || vendorTagFilter || statusFilter;
+
+  const clearFilters = () => {
+    setSearch(''); setTypeFilter(''); setCountyFilter(''); setHospitalFilter('');
+    setCorporateGroupFilter(''); setClinicalTagFilter(''); setVendorTagFilter(''); setStatusFilter('');
+    setPage(1);
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Filter panel */}
+      <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Search by name, type, city, county, alias…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+          </div>
+          <button onClick={() => onEdit({})}
+            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 whitespace-nowrap">
+            <Plus size={14} />Add Vendor
+          </button>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1); }}>
+            <option value="">All Vendor Types</option>
+            {VENDOR_TYPES.map(t => <option key={t}>{t}</option>)}
+          </select>
+          <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={countyFilter} onChange={e => { setCountyFilter(e.target.value); setPage(1); }}>
+            <option value="">All Counties</option>
+            {COUNTIES.map(c => <option key={c}>{c}</option>)}
+          </select>
+          <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={hospitalFilter} onChange={e => { setHospitalFilter(e.target.value); setPage(1); }}>
+            <option value="">All Reviewing Hospitals</option>
+            {HOSPITALS.map(h => <option key={h}>{h}</option>)}
+          </select>
+          <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}>
+            <option value="">All Statuses</option>
+            <option value="active">Active</option>
+            <option value="needs_review">Needs Review</option>
+            <option value="hidden">Hidden</option>
+          </select>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={corporateGroupFilter} onChange={e => { setCorporateGroupFilter(e.target.value); setPage(1); }}>
+            <option value="">All Corporate Groups</option>
+            {CORPORATE_GROUPS.map(g => <option key={g}>{g}</option>)}
+          </select>
+          <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={clinicalTagFilter} onChange={e => { setClinicalTagFilter(e.target.value); setPage(1); }}>
+            <option value="">Any Clinical Tag</option>
+            {CLINICAL_TAGS.map(t => <option key={t}>{t}</option>)}
+          </select>
+          <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={vendorTagFilter} onChange={e => { setVendorTagFilter(e.target.value); setPage(1); }}>
+            <option value="">Any Vendor Tag</option>
+            {VENDOR_TAGS.map(t => <option key={t}>{t}</option>)}
+          </select>
+        </div>
+        {hasFilters && (
+          <div className="flex items-center gap-3 text-xs">
+            <span className="text-gray-500">{filtered.length} vendor{filtered.length !== 1 ? 's' : ''} match</span>
+            <button onClick={clearFilters} className="text-blue-600 hover:underline">Clear all filters</button>
+          </div>
+        )}
+      </div>
+
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-center gap-3">
+          <span className="text-sm font-medium text-blue-700">{selected.size} vendor{selected.size !== 1 ? 's' : ''} selected</span>
+          <button onClick={() => setShowBulkEdit(true)}
+            className="px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700">
+            Bulk Edit
+          </button>
+          <button onClick={() => setSelected(new Set())}
+            className="px-3 py-1.5 border border-gray-300 text-gray-600 text-sm rounded-lg hover:bg-gray-50">
+            Clear Selection
+          </button>
+        </div>
+      )}
+
+      {/* Table */}
       <div className="overflow-x-auto rounded-xl border border-gray-200">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
+              <th className="px-4 py-3 w-10">
+                <input type="checkbox" checked={allPageSelected && paginated.length > 0}
+                  onChange={toggleSelectAll} className="w-4 h-4 accent-blue-600" />
+              </th>
               <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Vendor</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Type</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">County</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Source</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Last Review</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Location &amp; Contact</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Hospital</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Corporate Group</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Contacts</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Tags</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Status</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {filtered.map(v => (
-              <tr key={v.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3">
-                  <p className="font-medium text-gray-900">{v.name}</p>
-                  {v.abbreviation && <p className="text-xs text-gray-400">{v.abbreviation}</p>}
-                </td>
-                <td className="px-4 py-3 text-gray-600 text-xs max-w-32 leading-relaxed">{v.vendorType}</td>
-                <td className="px-4 py-3 text-gray-600">{v.county || '—'}</td>
-                <td className="px-4 py-3">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${
-                    v.dataSource === 'Careport' ? 'bg-indigo-50 text-indigo-700' : 'bg-gray-100 text-gray-600'
-                  }`}>{v.dataSource}</span>
-                </td>
-                <td className="px-4 py-3 text-gray-600 text-xs">{v.lastReviewed}</td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-col gap-1">
-                  {v.hidden
-                    ? <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200 w-fit">Hidden</span>
-                    : v.pendingReview
-                    ? <span className="text-xs text-orange-700 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-200 w-fit">Needs Review</span>
-                    : <span className="text-xs text-green-700 bg-green-50 px-2 py-0.5 rounded-full border border-green-200 w-fit">Active</span>
-                  }
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => onEdit(v)} className="text-gray-400 hover:text-blue-600"><Edit2 size={14} /></button>
-                    <button onClick={() => onDelete(v.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={14} /></button>
-                  </div>
+            {paginated.length === 0 ? (
+              <tr>
+                <td colSpan={10} className="px-4 py-10 text-center text-sm text-gray-400">
+                  {hasFilters ? 'No vendors match the current filters.' : 'No vendors in directory.'}
                 </td>
               </tr>
-            ))}
+            ) : (
+              paginated.map(v => {
+                const allContacts = [
+                  ...(v.admissionsContacts || []),
+                  ...(v.escalationContacts || []),
+                ].filter(c => c?.name);
+                return (
+                  <tr key={v.id} className={`hover:bg-gray-50 ${selected.has(v.id) ? 'bg-blue-50' : ''}`}>
+                    <td className="px-4 py-3">
+                      <input type="checkbox" checked={selected.has(v.id)}
+                        onChange={e => setSelected(s => { const n = new Set(s); e.target.checked ? n.add(v.id) : n.delete(v.id); return n; })}
+                        className="w-4 h-4 accent-blue-600" />
+                    </td>
+                    <td className="px-4 py-3 max-w-48">
+                      <p className="font-medium text-gray-900">{v.name}</p>
+                      {v.abbreviation && <p className="text-xs text-gray-400">{v.abbreviation}</p>}
+                      {v.synonyms?.length > 0 && (
+                        <p className="text-xs text-gray-400 italic truncate">{v.synonyms.slice(0, 2).join(', ')}{v.synonyms.length > 2 ? '…' : ''}</p>
+                      )}
+                      {v.dataSource && (
+                        <span className={`text-xs px-1.5 py-0.5 rounded mt-0.5 inline-block ${
+                          v.dataSource === 'Careport' ? 'bg-indigo-50 text-indigo-600' : 'bg-gray-100 text-gray-500'
+                        }`}>{v.dataSource}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 text-xs max-w-36 leading-relaxed">{v.vendorType}</td>
+                    <td className="px-4 py-3 text-xs space-y-0.5">
+                      {v.city && <p className="text-gray-700">{v.city}{v.county ? `, ${v.county} Co.` : ''}</p>}
+                      {v.address && <p className="text-gray-400">{v.address}</p>}
+                      {v.zip && <p className="text-gray-400">{v.zip}</p>}
+                      {v.phone && <p className="text-gray-600 font-mono">{formatPhone(v.phone)}</p>}
+                      {v.fax && <p className="text-gray-400">Fax: {formatPhone(v.fax)}</p>}
+                      {v.website && <p className="text-blue-500 truncate max-w-32">{v.website}</p>}
+                      {v.coverageAreas?.length > 0 && (
+                        <p className="text-gray-400">Areas: {v.coverageAreas.join(', ')}</p>
+                      )}
+                      {v.lastReviewed && <p className="text-gray-300">Reviewed: {v.lastReviewed}</p>}
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      {v.reviewingSite
+                        ? <span className="text-blue-700 bg-blue-50 px-2 py-0.5 rounded whitespace-nowrap">{v.reviewingSite}</span>
+                        : <span className="text-gray-400">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-600">{v.corporateGroup || '—'}</td>
+                    <td className="px-4 py-3 text-xs">
+                      {allContacts.length === 0 ? (
+                        <span className="text-gray-400">—</span>
+                      ) : (
+                        <div className="space-y-1">
+                          {allContacts.slice(0, 3).map((c, i) => (
+                            <div key={i}>
+                              <p className="font-medium text-gray-800">{c.name}</p>
+                              {c.type && <p className="text-gray-400">{c.type}</p>}
+                              {c.phone && <p className="text-gray-500 font-mono">{formatPhone(c.phone)}</p>}
+                              {c.email && <p className="text-gray-500 truncate max-w-36">{c.email}</p>}
+                            </div>
+                          ))}
+                          {allContacts.length > 3 && (
+                            <p className="text-gray-400">+{allContacts.length - 3} more</p>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {v.vendorTags?.map(t => (
+                          <span key={t} className="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded whitespace-nowrap">{t}</span>
+                        ))}
+                        {v.clinicalTags?.map(t => (
+                          <span key={t} className="text-xs bg-blue-50 text-blue-700 border border-blue-100 px-1.5 py-0.5 rounded whitespace-nowrap">{t}</span>
+                        ))}
+                        {v.notes && (
+                          <span className="text-xs text-gray-400 italic">Has notes</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col gap-1">
+                        {v.hidden
+                          ? <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200 w-fit">Hidden</span>
+                          : v.pendingReview
+                          ? <span className="text-xs text-orange-700 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-200 w-fit">Needs Review</span>
+                          : <span className="text-xs text-green-700 bg-green-50 px-2 py-0.5 rounded-full border border-green-200 w-fit">Active</span>
+                        }
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => onEdit(v)} className="text-gray-400 hover:text-blue-600"><Edit2 size={14} /></button>
+                        <button onClick={() => onDelete(v.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={14} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-gray-500 text-xs">{filtered.length} total · showing page {currentPage} of {totalPages}</span>
+          <div className="flex items-center gap-2">
+            <button disabled={currentPage === 1} onClick={() => setPage(p => p - 1)}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs disabled:opacity-40 hover:bg-gray-100">← Prev</button>
+            <button disabled={currentPage === totalPages} onClick={() => setPage(p => p + 1)}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs disabled:opacity-40 hover:bg-gray-100">Next →</button>
+          </div>
+        </div>
+      )}
+
+      {showBulkEdit && (
+        <BulkEditModal
+          selectedIds={selected}
+          onClose={() => setShowBulkEdit(false)}
+          onSave={(updates) => {
+            onBulkUpdate(selected, updates);
+            setSelected(new Set());
+            setShowBulkEdit(false);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -465,7 +1132,7 @@ function NeedsReviewQueue({ vendors, onResolve, onEdit, onDelete, onToggleHidden
                       <button
                         onClick={() => onToggleHidden(v.id, !v.hidden)}
                         title={v.hidden ? 'Make visible in search' : 'Hide from search'}
-                        className={`text-gray-400 hover:text-purple-600`}>
+                        className="text-gray-400 hover:text-purple-600">
                         {v.hidden ? <Eye size={14} /> : <EyeOff size={14} />}
                       </button>
                       <button onClick={() => onDelete(v.id)}
@@ -524,18 +1191,23 @@ function AddEditVendorModal({ vendor, onClose, onSave }) {
   const normSynonyms = (v) => Array.isArray(v?.synonyms) ? v.synonyms
     : v?.synonyms ? v.synonyms.split(',').map(s => s.trim()).filter(Boolean) : [];
 
+  const mergeContacts = (v) => [
+    ...(v?.admissionsContacts || []).filter(c => c?.name || c?.type),
+    ...(v?.escalationContacts || []).filter(c => c?.name || c?.type),
+  ];
+
   const [form, setForm] = useState(vendor ? {
     ...vendor,
     synonyms: normSynonyms(vendor),
     clinicalTags: vendor.clinicalTags || [],
     vendorTags: vendor.vendorTags || [],
+    allContacts: mergeContacts(vendor),
   } : {
     name: '', displayName: '', abbreviation: '', vendorType: '',
     address: '', city: '', county: '', zip: '', state: 'CA',
     phone: '', fax: '', website: '',
     coverageAreas: [],
-    admissionsContacts: [{ type: '', title: '', name: '', phone: '', email: '' }],
-    escalationContacts: [{ type: '', title: '', name: '', phone: '', email: '' }],
+    allContacts: [],
     clinicalTags: [],
     vendorTags: [],
     synonyms: [],
@@ -543,11 +1215,42 @@ function AddEditVendorModal({ vendor, onClose, onSave }) {
     dataSource: 'Manual',
     lastReviewed: new Date().toISOString().split('T')[0],
     reviewingSite: '',
+    corporateGroup: '',
   });
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const toggleCoverage = (a) => set('coverageAreas', form.coverageAreas?.includes(a)
     ? form.coverageAreas.filter(x => x !== a) : [...(form.coverageAreas || []), a]);
+
+  const addContact = () => setForm(f => ({
+    ...f,
+    allContacts: [...(f.allContacts || []), { type: '', title: '', name: '', phone: '', email: '' }]
+  }));
+
+  const updateContact = (idx, field, val) => setForm(f => ({
+    ...f,
+    allContacts: f.allContacts.map((c, i) => i === idx ? { ...c, [field]: val } : c)
+  }));
+
+  const removeContact = (idx) => setForm(f => ({
+    ...f,
+    allContacts: f.allContacts.filter((_, i) => i !== idx)
+  }));
+
+  const isAdmType = (type) => type?.toLowerCase().includes('admissions');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const contacts = form.allContacts || [];
+    const saveData = {
+      ...form,
+      admissionsContacts: contacts.filter(c => isAdmType(c.type)),
+      escalationContacts: contacts.filter(c => !isAdmType(c.type)),
+    };
+    delete saveData.allContacts;
+    onSave(saveData);
+    onClose();
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -557,7 +1260,7 @@ function AddEditVendorModal({ vendor, onClose, onSave }) {
           <h2 className="text-lg font-semibold text-gray-900">{isEdit ? `Edit: ${vendor.name}` : 'Add New Vendor'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl font-bold">×</button>
         </div>
-        <form className="px-6 py-5 space-y-5" onSubmit={e => { e.preventDefault(); onSave(form); onClose(); }}>
+        <form className="px-6 py-5 space-y-5" onSubmit={handleSubmit}>
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className="block text-xs font-medium text-gray-600 mb-1">Vendor Name *</label>
@@ -607,6 +1310,29 @@ function AddEditVendorModal({ vendor, onClose, onSave }) {
                 value={form.zip || ''} onChange={e => set('zip', e.target.value)} />
               <input placeholder="Phone" className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={form.phone || ''} onChange={e => set('phone', e.target.value)} />
+              <input placeholder="Fax" className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={form.fax || ''} onChange={e => set('fax', e.target.value)} />
+              <input placeholder="Website" className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={form.website || ''} onChange={e => set('website', e.target.value)} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Reviewing Hospital</label>
+              <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={form.reviewingSite || ''} onChange={e => set('reviewingSite', e.target.value)}>
+                <option value="">Select hospital…</option>
+                {HOSPITALS.map(h => <option key={h}>{h}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Corporate Group</label>
+              <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={form.corporateGroup || ''} onChange={e => set('corporateGroup', e.target.value)}>
+                <option value="">Select group…</option>
+                {CORPORATE_GROUPS.map(g => <option key={g}>{g}</option>)}
+              </select>
             </div>
           </div>
 
@@ -625,6 +1351,56 @@ function AddEditVendorModal({ vendor, onClose, onSave }) {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Contacts */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">Contacts</label>
+              <button type="button" onClick={addContact}
+                className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium border border-blue-200 bg-blue-50 px-2.5 py-1 rounded-lg">
+                <Plus size={12} />Add Contact
+              </button>
+            </div>
+            {(form.allContacts || []).length === 0 ? (
+              <p className="text-xs text-gray-400 italic py-2 border border-dashed border-gray-200 rounded-lg text-center">
+                No contacts — click "Add Contact" to add one.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {(form.allContacts || []).map((contact, idx) => (
+                  <div key={idx} className="border border-gray-200 rounded-xl p-3 space-y-2 bg-gray-50">
+                    <div className="flex items-center gap-2">
+                      <select
+                        className="flex-1 border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={contact.type}
+                        onChange={e => updateContact(idx, 'type', e.target.value)}
+                      >
+                        <option value="">Contact Type…</option>
+                        {CONTACT_TYPES.map(t => <option key={t}>{t}</option>)}
+                      </select>
+                      <button type="button" onClick={() => removeContact(idx)}
+                        className="text-gray-400 hover:text-red-500 text-lg leading-none font-bold flex-shrink-0">×</button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input placeholder="Name" className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={contact.name} onChange={e => updateContact(idx, 'name', e.target.value)} />
+                      <input placeholder="Title" className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={contact.title || ''} onChange={e => updateContact(idx, 'title', e.target.value)} />
+                      <input placeholder="Phone" className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={contact.phone} onChange={e => updateContact(idx, 'phone', e.target.value)} />
+                      <input placeholder="Email" className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={contact.email} onChange={e => updateContact(idx, 'email', e.target.value)} />
+                    </div>
+                    {contact.type && (
+                      <p className="text-xs text-gray-400">
+                        → Will be stored as {isAdmType(contact.type) ? 'Admissions contact' : 'Escalation / other contact'}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>
@@ -829,11 +1605,12 @@ function AuditLogTab({ auditLog }) {
 export default function AdminInterface({
   vendors, pendingSubmissions, reviewCycles, sitePocs, auditLog = [],
   onApproveSubmission, onRejectSubmission, onUpdateVendor, onAddVendor, onDeleteVendor,
-  onImportCareport,
+  onImportCareport, onAddSitePoc, onAddReviewCycle,
 }) {
   const [tab, setTab] = useState('dashboard');
   const [editModal, setEditModal] = useState(null);
-  const [importState, setImportState] = useState(null); // null | 'loading' | {newCount, conflictCount, updatedCount, total}
+  const [showAddPocModal, setShowAddPocModal] = useState(false);
+  const [importState, setImportState] = useState(null);
   const [importError, setImportError] = useState(null);
   const fileInputRef = useRef(null);
 
@@ -846,7 +1623,6 @@ export default function AdminInterface({
     setImportState('loading');
     try {
       const mod = await import('xlsx');
-      // Handle both CJS-interop styles Vite may produce
       const XLSX = mod.default ?? mod;
       if (typeof XLSX.read !== 'function') throw new Error('xlsx library failed to load — XLSX.read is not a function');
       const buffer = await file.arrayBuffer();
@@ -862,7 +1638,46 @@ export default function AdminInterface({
     }
   };
 
+  const handleBulkUpdate = (selectedIds, updates) => {
+    selectedIds.forEach(id => {
+      const vendor = vendors.find(v => v.id === id);
+      if (!vendor) return;
+      const patch = {};
+      if (updates.vendorType) patch.vendorType = updates.vendorType;
+      if (updates.reviewingSite) patch.reviewingSite = updates.reviewingSite;
+      if (updates.corporateGroup) patch.corporateGroup = updates.corporateGroup;
+      if (updates.coverageAreas) patch.coverageAreas = updates.coverageAreas;
+      if (updates._addClinicalTags?.length) {
+        patch.clinicalTags = [...new Set([...(vendor.clinicalTags || []), ...updates._addClinicalTags])];
+      }
+      if (updates._addVendorTags?.length) {
+        patch.vendorTags = [...new Set([...(vendor.vendorTags || []), ...updates._addVendorTags])];
+      }
+      if (updates._addContact?.name) {
+        const isAdm = updates._addContact.type?.toLowerCase().includes('admissions');
+        if (isAdm) {
+          patch.admissionsContacts = [...(vendor.admissionsContacts || []), updates._addContact];
+        } else {
+          patch.escalationContacts = [...(vendor.escalationContacts || []), updates._addContact];
+        }
+      }
+      if (Object.keys(patch).length > 0) {
+        onUpdateVendor(id, patch);
+      }
+    });
+    showToast({
+      type: 'approved',
+      title: `Bulk update applied`,
+      to: '',
+      subject: '',
+      body: `Updated ${selectedIds.size} vendor${selectedIds.size !== 1 ? 's' : ''}.`,
+    });
+  };
+
   const needsReview = vendors.filter(v => v.pendingReview);
+
+  // Only show elevated roles in Users & Roles (not Search Users)
+  const elevatedUsers = sitePocs.filter(p => p.role === 'Site POC' || p.role === 'Admin');
 
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart2 },
@@ -990,8 +1805,9 @@ export default function AdminInterface({
               <h2 className="text-xl font-bold text-gray-900">Vendor Directory</h2>
               <VendorTable
                 vendors={vendors}
-                onEdit={(v) => setEditModal(v || {})}
+                onEdit={(v) => setEditModal(v?.id ? v : {})}
                 onDelete={onDeleteVendor}
+                onBulkUpdate={handleBulkUpdate}
               />
             </div>
           )}
@@ -1085,10 +1901,7 @@ export default function AdminInterface({
                         {importState.removedFromCareportCount} Careport-sourced record{importState.removedFromCareportCount !== 1 ? 's are' : ' is'} not in this export — flagged "Needs Review" in case they were removed or renamed in Careport.
                       </p>
                     )}
-                    <button
-                      onClick={() => setImportState(null)}
-                      className="text-xs text-green-700 underline"
-                    >
+                    <button onClick={() => setImportState(null)} className="text-xs text-green-700 underline">
                       Import another file
                     </button>
                   </div>
@@ -1110,23 +1923,40 @@ export default function AdminInterface({
           {/* Review Cycles */}
           {tab === 'review' && (
             <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-gray-900">Review Cycles</h2>
-                <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700">
-                  <Plus size={14} />New Review Cycle
-                </button>
-              </div>
-              <div className="space-y-3">
-                {reviewCycles.map(c => <ReviewCycleCard key={c.id} cycle={c} />)}
-              </div>
+              <h2 className="text-xl font-bold text-gray-900">Review Cycles</h2>
+
+              <ReviewCycleVendorSelector
+                vendors={vendors}
+                sitePocs={sitePocs}
+                onInitiate={(data) => {
+                  onAddReviewCycle(data);
+                  showToast({
+                    type: 'approved',
+                    title: `Review Cycle Initiated — ${data.name}`,
+                    to: data.pocName || '',
+                    subject: 'Review Cycle Notification',
+                    body: `Email notification sent to ${data.pocName} <${data.pocEmail}> for "${data.name}" (${data.vendorIds?.length || 0} vendors, due ${data.dueDate}).`,
+                  });
+                }}
+              />
+
+              {reviewCycles.length > 0 && (
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900 mb-3">Review Cycle History</h3>
+                  <div className="space-y-3">
+                    {reviewCycles.map(c => <ReviewCycleCard key={c.id} cycle={c} />)}
+                  </div>
+                </div>
+              )}
+
               <div className="bg-white border border-gray-200 rounded-xl p-5">
                 <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
                   <Calendar size={16} className="text-blue-600" />How Review Cycles Work
                 </h3>
                 <ol className="space-y-2 text-sm text-gray-600 list-decimal list-inside">
-                  <li>Admin initiates a cycle, selecting scope (all vendors, specific types, or specific sites)</li>
-                  <li>System identifies Site POCs for each vendor in scope based on service area</li>
-                  <li>POCs receive email/Teams notification with link to their assigned vendor list</li>
+                  <li>Select vendors by filtering on reviewing hospital or other criteria</li>
+                  <li>Click "Initiate Review Cycle" to assign a Site POC and due date</li>
+                  <li>POCs receive an email notification with their assigned vendor list</li>
                   <li>POC marks each record: Confirmed Accurate, Needs Update, or Flag for Deletion</li>
                   <li>Admin receives consolidated view of all proposed changes</li>
                   <li>Admin approves or rejects each change; approved changes go live immediately</li>
@@ -1139,51 +1969,67 @@ export default function AdminInterface({
           {/* Audit Log */}
           {tab === 'audit' && <AuditLogTab auditLog={auditLog} />}
 
-          {/* Users */}
+          {/* Users & Roles */}
           {tab === 'users' && (
             <div className="space-y-6">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-gray-900">Users & Roles</h2>
-                <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Users & Roles</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">Showing Site POC and Admin accounts only. Search Users are not listed here.</p>
+                </div>
+                <button
+                  onClick={() => setShowAddPocModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
+                >
                   <Plus size={14} />Add Site POC
                 </button>
               </div>
-              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Name</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Role</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Site</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Email</th>
-                      <th className="px-4 py-3"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {sitePocs.map(p => (
-                      <tr key={p.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 font-medium text-gray-900">{p.name}</td>
-                        <td className="px-4 py-3">
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            p.role === 'Admin' ? 'bg-purple-50 text-purple-700 border border-purple-200' : 'bg-blue-50 text-blue-700 border border-blue-200'
-                          }`}>{p.role}</span>
-                        </td>
-                        <td className="px-4 py-3 text-gray-600 text-xs">{p.site}</td>
-                        <td className="px-4 py-3 text-gray-600">{p.email}</td>
-                        <td className="px-4 py-3">
-                          <button className="text-gray-400 hover:text-blue-600"><Edit2 size={14} /></button>
-                        </td>
+
+              {elevatedUsers.length === 0 ? (
+                <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
+                  <Users size={36} className="mx-auto text-gray-300 mb-2" />
+                  <p className="text-gray-500 font-medium">No Site POCs or Admins added yet</p>
+                  <p className="text-xs text-gray-400 mt-1">Click "Add Site POC" to create the first one.</p>
+                </div>
+              ) : (
+                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200">
+                        <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Name</th>
+                        <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Role</th>
+                        <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Site</th>
+                        <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs uppercase tracking-wide">Email</th>
+                        <th className="px-4 py-3"></th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {elevatedUsers.map(p => (
+                        <tr key={p.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 font-medium text-gray-900">{p.name}</td>
+                          <td className="px-4 py-3">
+                            <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                              p.role === 'Admin' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-blue-50 text-blue-700 border-blue-200'
+                            }`}>{p.role}</span>
+                          </td>
+                          <td className="px-4 py-3 text-gray-600 text-xs">{p.site}</td>
+                          <td className="px-4 py-3 text-gray-600">{p.email}</td>
+                          <td className="px-4 py-3">
+                            <button className="text-gray-400 hover:text-blue-600"><Edit2 size={14} /></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
               <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-gray-600">
                 <p className="font-medium text-gray-800 mb-2">Role Definitions</p>
                 <div className="space-y-2">
-                  <p><span className="font-medium">Search User</span> — Default for all authenticated staff. Read-only access to Interface 1. Can submit new vendor contacts.</p>
-                  <p><span className="font-medium">Site POC</span> — Responsible for reviewing vendor records associated with their hospital site during review cycles.</p>
-                  <p><span className="font-medium">Admin</span> — Full access to Interface 2. Can import Careport data, manage review cycles, approve/reject submissions, and manage user roles.</p>
+                  <p><span className="font-medium">Search User</span> — Default for all authenticated staff. Read-only access to Vendor Directory. Can submit new vendor contacts. Not shown in this list.</p>
+                  <p><span className="font-medium">Site POC</span> — Responsible for reviewing vendor records associated with their hospital site during review cycles. Added here and selectable when initiating review cycles.</p>
+                  <p><span className="font-medium">Admin</span> — Full access to Admin Panel. Can import Careport data, manage review cycles, approve/reject submissions, and manage user roles.</p>
                 </div>
               </div>
             </div>
@@ -1191,6 +2037,7 @@ export default function AdminInterface({
         </div>
       </div>
 
+      {/* Edit Vendor Modal */}
       {editModal !== null && (
         <AddEditVendorModal
           vendor={editModal?.id ? editModal : null}
@@ -1198,6 +2045,24 @@ export default function AdminInterface({
           onSave={(data) => {
             if (data.id) onUpdateVendor(data.id, data);
             else onAddVendor(data);
+          }}
+        />
+      )}
+
+      {/* Add Site POC Modal */}
+      {showAddPocModal && (
+        <AddSitePocModal
+          onClose={() => setShowAddPocModal(false)}
+          onSave={(data) => {
+            onAddSitePoc(data);
+            setShowAddPocModal(false);
+            showToast({
+              type: 'approved',
+              title: `Site POC added — ${data.name}`,
+              to: data.name,
+              subject: '',
+              body: `${data.name} (${data.role}) has been added for ${data.site}.`,
+            });
           }}
         />
       )}
