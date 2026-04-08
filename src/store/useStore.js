@@ -227,9 +227,32 @@ export function useStore() {
     return { newCount: result.newCount, conflictCount: result.conflictCount, updatedCount: result.updatedCount, removedFromCareportCount: result.removedFromCareportCount };
   }, [vendors, log, currentUser.name]);
 
+  const addSitePoc = useCallback((pocData) => {
+    const id = `POC${String(++idCounter).padStart(3, '0')}`;
+    setSitePocs(prev => [...prev, { ...pocData, id }]);
+  }, []);
+
+  const addReviewCycle = useCallback((cycleData) => {
+    const id = `RC${String(++idCounter).padStart(3, '0')}`;
+    const cycle = {
+      ...cycleData,
+      id,
+      status: 'Active',
+      startedAt: new Date().toISOString().split('T')[0],
+      totalVendors: cycleData.vendorIds?.length || 0,
+      reviewed: 0,
+      approved: 0,
+      rejected: 0,
+      pending: cycleData.vendorIds?.length || 0,
+    };
+    setReviewCycles(prev => [cycle, ...prev]);
+    log(makeEntry('create', '', cycleData.name, currentUser.name, [],
+      `Review cycle created for ${cycleData.vendorIds?.length || 0} vendors, assigned to ${cycleData.pocName || 'unknown POC'}`));
+  }, [log, currentUser.name]);
+
   return {
     vendors, pendingSubmissions, reviewCycles, sitePocs, currentUser, auditLog,
     approveSubmission, rejectSubmission, updateVendor, addVendor, deleteVendor,
-    submitVendorEntry, importCareport,
+    submitVendorEntry, importCareport, addSitePoc, addReviewCycle,
   };
 }

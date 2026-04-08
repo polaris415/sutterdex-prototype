@@ -11,7 +11,7 @@ export default function App() {
   const [view, setView] = useState('search'); // 'search' | 'admin'
   const {
     vendors, pendingSubmissions, reviewCycles, sitePocs, currentUser, auditLog,
-    approveSubmission, rejectSubmission, updateVendor, addVendor, deleteVendor, submitVendorEntry, importCareport,
+    approveSubmission, rejectSubmission, updateVendor, addVendor, deleteVendor, submitVendorEntry, importCareport, addSitePoc, addReviewCycle,
   } = useStore();
 
   const pendingCount = pendingSubmissions.filter(s => s.status === 'Pending').length;
@@ -103,6 +103,8 @@ export default function App() {
             onAddVendor={addVendor}
             onDeleteVendor={deleteVendor}
             onImportCareport={importCareport}
+            onAddSitePoc={addSitePoc}
+            onAddReviewCycle={addReviewCycle}
           />
         )}
       </main>
