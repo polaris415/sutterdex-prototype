@@ -3,9 +3,11 @@ import { BookOpen, Settings, Shield } from 'lucide-react';
 import { useStore } from './store/useStore';
 import SearchInterface from './components/SearchInterface';
 import AdminInterface from './components/AdminInterface';
+import LoginPage from './components/LoginPage';
 import { ToastContainer } from './components/Toast';
 
 export default function App() {
+  const [loggedIn, setLoggedIn] = useState(false);
   const [view, setView] = useState('search'); // 'search' | 'admin'
   const {
     vendors, pendingSubmissions, reviewCycles, sitePocs, currentUser, auditLog,
@@ -13,6 +15,10 @@ export default function App() {
   } = useStore();
 
   const pendingCount = pendingSubmissions.filter(s => s.status === 'Pending').length;
+
+  if (!loggedIn) {
+    return <LoginPage onLogin={() => setLoggedIn(true)} />;
+  }
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-gray-50">
@@ -25,7 +31,7 @@ export default function App() {
               <BookOpen size={16} className="text-white" />
             </div>
             <div>
-              <span className="font-bold text-gray-900 text-lg leading-none">SutterDex</span>
+              <span className="font-bold text-gray-900 text-lg leading-none">ContactDex</span>
               <span className="text-xs text-gray-400 block leading-none">Vendor Resource Directory</span>
             </div>
           </div>
