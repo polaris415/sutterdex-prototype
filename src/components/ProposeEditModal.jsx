@@ -62,23 +62,32 @@ function ContactFields({ prefix, label, form, set, phoneErrors, validatePhone })
   );
 }
 
-function TagCheckboxGrid({ label, options, selected, onChange, accentClass = 'accent-blue-600' }) {
+function TagCheckboxGrid({ label, options, selected, onChange }) {
   return (
     <div>
       <p className="text-sm font-semibold text-gray-700 mb-2 border-b border-gray-100 pb-2">{label}</p>
       <div className="grid grid-cols-2 gap-1 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">
-        {options.map(tag => (
-          <label key={tag} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer hover:bg-white px-2 py-1 rounded transition-colors">
-            <div className={`w-3.5 h-3.5 flex-shrink-0 rounded border flex items-center justify-center ${
-              selected.includes(tag) ? 'bg-blue-600 border-blue-600' : 'border-gray-300 bg-white'
-            }`}>
-              {selected.includes(tag) && <Check size={8} className="text-white" strokeWidth={3} />}
+        {options.map(tag => {
+          const isChecked = selected.includes(tag);
+          return (
+            <div
+              key={tag}
+              role="checkbox"
+              aria-checked={isChecked}
+              tabIndex={0}
+              className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer hover:bg-white px-2 py-1 rounded transition-colors"
+              onClick={() => onChange(isChecked ? selected.filter(t => t !== tag) : [...selected, tag])}
+              onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onChange(isChecked ? selected.filter(t => t !== tag) : [...selected, tag]); } }}
+            >
+              <div className={`w-3.5 h-3.5 flex-shrink-0 rounded border flex items-center justify-center ${
+                isChecked ? 'bg-blue-600 border-blue-600' : 'border-gray-300 bg-white'
+              }`}>
+                {isChecked && <Check size={8} className="text-white" strokeWidth={3} />}
+              </div>
+              {tag}
             </div>
-            <input type="checkbox" className="sr-only" checked={selected.includes(tag)}
-              onChange={e => onChange(e.target.checked ? [...selected, tag] : selected.filter(t => t !== tag))} />
-            {tag}
-          </label>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

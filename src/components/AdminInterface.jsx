@@ -595,6 +595,9 @@ function InitiateReviewCycleModal({ selectedCount, sitePocs, onClose, onSubmit }
 function ReviewCycleVendorSelector({ vendors, sitePocs, onInitiate }) {
   const [hospitalFilter, setHospitalFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [corporateGroupFilter, setCorporateGroupFilter] = useState('');
+  const [countyFilter, setCountyFilter] = useState('');
+  const [vendorTagFilter, setVendorTagFilter] = useState('');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(new Set());
   const [showInitiateModal, setShowInitiateModal] = useState(false);
@@ -602,6 +605,9 @@ function ReviewCycleVendorSelector({ vendors, sitePocs, onInitiate }) {
   const filtered = vendors.filter(v => {
     if (hospitalFilter && v.reviewingSite !== hospitalFilter) return false;
     if (typeFilter && v.vendorType !== typeFilter) return false;
+    if (corporateGroupFilter && v.corporateGroup !== corporateGroupFilter) return false;
+    if (countyFilter && v.county !== countyFilter) return false;
+    if (vendorTagFilter && !v.vendorTags?.includes(vendorTagFilter)) return false;
     if (search && !v.name.toLowerCase().includes(search.toLowerCase()) &&
         !v.vendorType?.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
@@ -637,13 +643,28 @@ function ReviewCycleVendorSelector({ vendors, sitePocs, onInitiate }) {
       <div className="grid grid-cols-3 gap-3">
         <select value={hospitalFilter} onChange={e => setHospitalFilter(e.target.value)}
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <option value="">All Hospitals (primary filter)</option>
+          <option value="">All Hospitals</option>
           {HOSPITALS.map(h => <option key={h}>{h}</option>)}
         </select>
         <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">All Vendor Types</option>
           {VENDOR_TYPES.map(t => <option key={t}>{t}</option>)}
+        </select>
+        <select value={corporateGroupFilter} onChange={e => setCorporateGroupFilter(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="">All Corporate Groups</option>
+          {CORPORATE_GROUPS.map(g => <option key={g}>{g}</option>)}
+        </select>
+        <select value={countyFilter} onChange={e => setCountyFilter(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="">All Counties</option>
+          {COUNTIES.map(c => <option key={c}>{c}</option>)}
+        </select>
+        <select value={vendorTagFilter} onChange={e => setVendorTagFilter(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="">All Vendor Tags</option>
+          {VENDOR_TAGS.map(t => <option key={t}>{t}</option>)}
         </select>
         <div className="relative">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
